@@ -9522,6 +9522,8 @@ public class L2PcInstance extends L2PlayableInstance
 				try
 				{
 					player.setBaseClass(rset.getInt("base_class"));
+					
+					player.setIsAio(rset.getInt("isAio") == 1);
 				}
 				catch (Exception e)
 				{
@@ -12330,6 +12332,17 @@ public class L2PcInstance extends L2PlayableInstance
 	public String toString()
 	{
 		return "player " + getName();
+	}
+	
+	public void checkAioRestriction()
+	{
+		// Verificamos si el personaje está en una zona de paz usando el método booleano directo
+		if (this.isAio() && !this.isInsideZone(l2jorion.game.model.zone.ZoneId.ZONE_PEACE))
+		{
+			this.stopMove(null);
+			this.teleToLocation(83423, 148601, -3400, true);
+			this.sendMessage("Los personajes AIO tienen restringido el acceso fuera de la ciudad.");
+		}
 	}
 	
 	public int getEnchantEffect()
@@ -19573,6 +19586,16 @@ public class L2PcInstance extends L2PlayableInstance
 	public boolean isArena1x1()
 	{
 		return _Arena1x1;
+	}
+	
+	public boolean isAio()
+	{
+		return _isAio;
+	}
+	
+	public void setIsAio(boolean value)
+	{
+		_isAio = value;
 	}
 	
 	public final Achievement getAchievement()
