@@ -286,7 +286,18 @@ public class L2PcInstance extends L2PlayableInstance
 	protected boolean _blockBuff = false;
 	protected static boolean _cwPopUpMenuOn = true;
 	protected boolean _bossObserve = false;
+	
 	private boolean _isAio = false;
+	
+	public boolean isAio()
+	{
+		return _isAio;
+	}
+	
+	public void setAio(boolean value)
+	{
+		_isAio = value;
+	}
 	
 	private FakePlayer _fakePlayerUnderControl = null;
 	
@@ -331,11 +342,11 @@ public class L2PcInstance extends L2PlayableInstance
 	private static final String UPDATE_CHARACTER = "UPDATE characters SET level=?,maxHp=?,curHp=?,maxCp=?,curCp=?,maxMp=?,curMp=?,str=?,con=?,dex=?,_int=?,men=?,wit=?,face=?,hairStyle=?,hairColor=?,heading=?,x=?,y=?,z=?,exp=?,expBeforeDeath=?,"
 		+ "sp=?,karma=?,pvpkills=?,pkkills=?,rec_have=?,rec_left=?,clanid=?,maxload=?,race=?,classid=?,deletetime=?,title=?,online=?,isin7sdungeon=?,clan_privs=?,wantspeace=?,base_class=?,onlinetime=?,punish_level=?,punish_timer=?,"
 		+ "newbie=?,nobless=?,power_grade=?,subpledge=?,last_recom_date=?,lvl_joined_academy=?,apprentice=?,sponsor=?,varka_ketra_ally=?,clan_join_expiry_time=?,clan_create_expiry_time=?,char_name=?,account_name=?,death_penalty_level=?,pc_point=?,name_color=?,"
-		+ "title_color=?,autoloot=?,autoloot_herbs=?,blockbuff=?,gainexp=?,titlestatus=?,pm=?,trade=?,screentxt=?,teleport=?,effects=? WHERE obj_id=?";
+		+ "title_color=?,autoloot=?,autoloot_herbs=?,blockbuff=?,gainexp=?,titlestatus=?,pm=?,trade=?,screentxt=?,teleport=?,effects=?,custom_race_skin=?,custom_class_skin=? WHERE obj_id=?";
 	private static final String RESTORE_CHARACTER = "SELECT account_name, obj_Id, char_name, level, maxHp, curHp, maxCp, curCp, maxMp, curMp, acc, crit, evasion, mAtk, mDef, mSpd, pAtk, pDef, pSpd, runSpd, walkSpd, str, con, dex, _int, men, wit,"
 		+ " face, hairStyle, hairColor, sex, heading, x, y, z, movement_multiplier, attack_speed_multiplier, colRad, colHeight, exp, expBeforeDeath, sp, karma, pvpkills, pkkills, clanid, maxload, race, classid, deletetime, cancraft, title, rec_have,"
 		+ " rec_left, online, char_slot, lastAccess, clan_privs, wantspeace, base_class, onlinetime, isin7sdungeon,punish_level, punish_timer, newbie, nobless, power_grade, subpledge, last_recom_date, lvl_joined_academy, apprentice,"
-		+ " sponsor, varka_ketra_ally, clan_join_expiry_time, clan_create_expiry_time, death_penalty_level, pc_point, name_color, title_color, first_log, autoloot, autoloot_herbs, blockbuff, gainexp, titlestatus, pm, trade, screentxt, teleport, effects FROM characters WHERE obj_id=?";
+		+ " sponsor, varka_ketra_ally, clan_join_expiry_time, clan_create_expiry_time, death_penalty_level, pc_point, name_color, title_color, first_log, autoloot, autoloot_herbs, blockbuff, gainexp, titlestatus, pm, trade, screentxt, teleport, effects, custom_race_skin, custom_class_skin FROM characters WHERE obj_id=?";
 	
 	private static final String STATUS_DATA_GET = "SELECT hero, noble, donator, hero_end_date FROM characters_custom_data WHERE obj_Id = ?";
 	private static final String RESTORE_SKILLS_FOR_CHAR_ALT_SUBCLASS = "SELECT skill_id,skill_level FROM character_skills WHERE char_obj_id=? ORDER BY (skill_level+0)";
@@ -416,6 +427,85 @@ public class L2PcInstance extends L2PlayableInstance
 				}
 			}
 		}
+	}
+	
+	private int _customClassSkin = -1;
+	private int _customRaceSkin = -1;
+	
+	public void setCustomClassSkin(int valor)
+	{
+		_customClassSkin = valor;
+	}
+	
+	public void setCustomRaceSkin(int valor)
+	{
+		_customRaceSkin = valor;
+		int claseOriginal = getClassId().getId();
+		
+		// Determinamos el ID del template
+		int templateId = claseOriginal;
+		if (valor != -1)
+		{
+			switch (valor)
+			{
+				case 0:
+					templateId = 0;
+					break; // Humano
+				case 1:
+					templateId = 18;
+					break; // Elfo
+				case 2:
+					templateId = 31;
+					break; // Dark Elfo
+				case 3:
+					templateId = 44;
+					break; // Orco
+				case 4:
+					templateId = 53;
+					break; // Enano
+			}
+		}
+		
+		// 1. Aplicamos el cuerpo físico
+		setTemplate(CharTemplateTable.getInstance().getTemplate(templateId));
+		
+		// 2. PARCHE PARA EL LOBBY Y PIES BAJO TIERRA:
+		// Si el valor es -1, volvemos a la raza real. Si no, forzamos la del skin.
+		if (valor != -1)
+		{
+			// Forzamos la raza visual para que el Lobby no te vea como Enana
+			getAppearance().setSex(false); // Forzamos Hombre (puedes cambiarlo si quieres)
+		}
+		
+		// 3. Restauramos la clase real
+		setClassId(claseOriginal);
+		
+		// Guardado en DB
+		try (Connection con = L2DatabaseFactory.getInstance().getConnection();
+			PreparedStatement statement = con.prepareStatement("UPDATE characters SET custom_race_skin=? WHERE obj_Id=?"))
+		{
+			statement.setInt(1, valor);
+			statement.setInt(2, getObjectId());
+			statement.execute();
+		}
+		catch (Exception e)
+		{
+			LOG.error("Error al guardar custom_race_skin: " + e);
+		}
+		
+		// Sincronizamos con el cliente para que recalcule el suelo
+		broadcastUserInfo();
+		sendPacket(new UserInfo(this));
+	}
+	
+	public int getCustomClassSkin()
+	{
+		return _customClassSkin;
+	}
+	
+	public int getCustomRaceSkin()
+	{
+		return _customRaceSkin;
 	}
 	
 	public int _originalNameColourVIP, _originalKarmaVIP;
@@ -5492,35 +5582,8 @@ public class L2PcInstance extends L2PlayableInstance
 	
 	public void updatePkColor(int pkKillAmount)
 	{
-		if (Config.PK_COLOR_SYSTEM_ENABLED)
-		{
-			// Check if the character has GM access and if so, let them be, like above.
-			if (isGM())
-			{
-				return;
-			}
-			
-			if (pkKillAmount >= Config.PK_AMOUNT1 && pkKillAmount < Config.PVP_AMOUNT2)
-			{
-				getAppearance().setTitleColor(Config.TITLE_COLOR_FOR_PK_AMOUNT1);
-			}
-			else if (pkKillAmount >= Config.PK_AMOUNT2 && pkKillAmount < Config.PVP_AMOUNT3)
-			{
-				getAppearance().setTitleColor(Config.TITLE_COLOR_FOR_PK_AMOUNT2);
-			}
-			else if (pkKillAmount >= Config.PK_AMOUNT3 && pkKillAmount < Config.PVP_AMOUNT4)
-			{
-				getAppearance().setTitleColor(Config.TITLE_COLOR_FOR_PK_AMOUNT3);
-			}
-			else if (pkKillAmount >= Config.PK_AMOUNT4 && pkKillAmount < Config.PVP_AMOUNT5)
-			{
-				getAppearance().setTitleColor(Config.TITLE_COLOR_FOR_PK_AMOUNT4);
-			}
-			else if (pkKillAmount >= Config.PK_AMOUNT5)
-			{
-				getAppearance().setTitleColor(Config.TITLE_COLOR_FOR_PK_AMOUNT5);
-			}
-		}
+		// Anulado para que no interfiera con el MobaSystem
+		return;
 	}
 	
 	public final void broadcastUserInfo()
@@ -7571,17 +7634,14 @@ public class L2PcInstance extends L2PlayableInstance
 		if (Config.PVPEXPSP_SYSTEM)
 		{
 			addExpAndSp(Config.ADD_EXP, Config.ADD_SP);
-			{
-				sendMessage("Earned Exp & SP for a pvp kill");
-			}
+			sendMessage("Earned Exp & SP for a pvp kill");
 		}
 		
-		if (getTitleOn())
-		{
-			updateTitle();
-		}
+		// --- SISTEMA MOBA L2-ANDROIDES ---
+		// Forzamos la actualización sin importar el getTitleOn
+		updateTitle();
 		
-		// Update the character's name color if they reached any of the 5 PvP levels.
+		// Update the character's name color (esto es el color del NOMBRE, no del título)
 		updatePvPColor(getPvpKills());
 		
 		if (Config.ALLOW_QUAKE_SYSTEM)
@@ -7943,13 +8003,15 @@ public class L2PcInstance extends L2PlayableInstance
 			}
 		}
 		
-		if (getTitleOn())
-		{
-			updateTitle();
-		}
+		// --- SISTEMA MOBA L2-ANDROIDES ---
+		// Forzamos la actualización del título.
+		// Quitamos el 'if (getTitleOn())' para que el sistema MOBA siempre sea visible.
+		updateTitle();
 		
-		// Update the character's title color if they reached any of the 5 PK levels.
-		updatePkColor(getPkKills());
+		// IMPORTANTE: COMENTAMOS ESTA LÍNEA.
+		// Si no la comentas, Orion pondrá el título en ROJO y perderás el color MOBA.
+		// updatePkColor(getPkKills());
+		
 		broadcastUserInfo();
 		
 		// Send a Server->Client UserInfo packet to attacker with its Karma and PK Counter
@@ -9381,6 +9443,8 @@ public class L2PcInstance extends L2PlayableInstance
 			statement.setLong(56, System.currentTimeMillis());
 			statement.setString(57, StringToHex(Integer.toHexString(getAppearance().getNameColor()).toUpperCase()));
 			statement.setString(58, StringToHex(Integer.toHexString(getAppearance().getTitleColor()).toUpperCase()));
+			statement.setInt(59, -1); // custom_race_skin por defecto
+			statement.setInt(60, -1); // custom_class_skin por defecto
 			
 			statement.executeUpdate();
 			statement.close();
@@ -9522,8 +9586,6 @@ public class L2PcInstance extends L2PlayableInstance
 				try
 				{
 					player.setBaseClass(rset.getInt("base_class"));
-					
-					player.setIsAio(rset.getInt("isAio") == 1);
 				}
 				catch (Exception e)
 				{
@@ -9605,6 +9667,43 @@ public class L2PcInstance extends L2PlayableInstance
 				player.setScreentxt(rset.getInt("screentxt") == 1 ? true : false);
 				player.setTeleport(rset.getInt("teleport") == 1 ? true : false);
 				player.setEffects(rset.getInt("effects") == 1 ? true : false);
+				
+				// Cargamos el skin
+				int skinRace = rset.getInt("custom_race_skin");
+				player.setCustomRaceSkin(skinRace);
+				player.setCustomClassSkin(rset.getInt("custom_class_skin"));
+				
+				// --- PARCHE DE COLISIÓN, CLASE Y SEXO AL LOGUEAR ---
+				if (skinRace != -1)
+				{
+					int claseReal = player.getClassId().getId();
+					int tId = 0;
+					switch (skinRace)
+					{
+						case 0:
+							tId = 0;
+							break;
+						case 1:
+							tId = 18;
+							break;
+						case 2:
+							tId = 31;
+							break;
+						case 3:
+							tId = 44;
+							break;
+						case 4:
+							tId = 53;
+							break;
+					}
+					
+					player.setTemplate(CharTemplateTable.getInstance().getTemplate(tId));
+					player.setClassId(claseReal);
+					
+					// Forzamos al objeto Appearance para que el Lobby mande los datos correctos
+					// Esto evita que aparezcas como mujer o con la raza base en la selección de PJ
+					player.getAppearance().setSex(false);
+				}
 				
 				// Set the x,y,z position of the L2PcInstance and make it invisible
 				player.setXYZInvisible(rset.getInt("x"), rset.getInt("y"), rset.getInt("z"));
@@ -10227,8 +10326,10 @@ public class L2PcInstance extends L2PlayableInstance
 			statement.setInt(67, getScreentxt() ? 1 : 0);
 			statement.setInt(68, getTeleport() ? 1 : 0);
 			statement.setInt(69, getEffects() ? 1 : 0);
+			statement.setInt(70, getCustomRaceSkin()); // custom_race_skin=?
+			statement.setInt(71, getCustomClassSkin()); // custom_class_skin=?
 			
-			statement.setInt(70, getObjectId());
+			statement.setInt(72, getObjectId());
 			
 			statement.execute();
 			statement.close();
@@ -12332,17 +12433,6 @@ public class L2PcInstance extends L2PlayableInstance
 	public String toString()
 	{
 		return "player " + getName();
-	}
-	
-	public void checkAioRestriction()
-	{
-		// Verificamos si el personaje está en una zona de paz usando el método booleano directo
-		if (this.isAio() && !this.isInsideZone(l2jorion.game.model.zone.ZoneId.ZONE_PEACE))
-		{
-			this.stopMove(null);
-			this.teleToLocation(83423, 148601, -3400, true);
-			this.sendMessage("Los personajes AIO tienen restringido el acceso fuera de la ciudad.");
-		}
 	}
 	
 	public int getEnchantEffect()
@@ -17498,8 +17588,11 @@ public class L2PcInstance extends L2PlayableInstance
 	 */
 	public void updateTitle()
 	{
-		setTitlePvpPk("PvP: [" + getPvpKills() + "] PK: [" + getPkKills() + "]");
+		// Llamamos al sistema externo de L2-Androides
+		MobaSystem.updateMobaTitle(this);
+		
 		broadcastTitleInfo();
+		broadcastUserInfo();
 	}
 	
 	public boolean isRequestExpired()
@@ -19586,16 +19679,6 @@ public class L2PcInstance extends L2PlayableInstance
 	public boolean isArena1x1()
 	{
 		return _Arena1x1;
-	}
-	
-	public boolean isAio()
-	{
-		return _isAio;
-	}
-	
-	public void setIsAio(boolean value)
-	{
-		_isAio = value;
 	}
 	
 	public final Achievement getAchievement()
